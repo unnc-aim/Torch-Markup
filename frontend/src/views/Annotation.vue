@@ -17,9 +17,10 @@ const progress = ref(null)
 const showHelp = ref(false)
 const showShortcutSettings = ref(false)
 const editingShortcut = ref(null)
+const editingCategoryShortcut = ref(null)  // 正在编辑快捷键的类别ID
 
-// 模式切换
-const canvasMode = ref('annotate')  // 'annotate' | 'pan'
+// 模式切换（默认拖动模式）
+const canvasMode = ref('pan')  // 'annotate' | 'pan'
 const zoomLevel = ref(1)
 const canvasRef = ref(null)
 
@@ -38,6 +39,8 @@ async function loadData() {
     await store.loadCategories(datasetId.value)
     await store.fetchNextImage(datasetId.value)
     await loadProgress()
+    // 加载新图片后重置为拖动模式
+    canvasMode.value = 'pan'
   } catch (error) {
     ElMessage.error('加载数据失败')
   }
@@ -59,6 +62,8 @@ async function handleSave() {
     // 如果在历史模式，不自动跳转下一张
     if (!store.isInHistory) {
       await store.fetchNextImage(datasetId.value)
+      // 进入下一张图片后重置为拖动模式
+      canvasMode.value = 'pan'
     }
     await loadProgress()
   } catch (error) {
@@ -72,6 +77,8 @@ async function handleSkip() {
     ElMessage.info('已标记为未见')
     await store.fetchNextImage(datasetId.value)
     await loadProgress()
+    // 进入下一张图片后重置为拖动模式
+    canvasMode.value = 'pan'
   } catch (error) {
     ElMessage.error('操作失败')
   }
@@ -106,6 +113,8 @@ async function handleSaveAndNext() {
     store.exitHistoryMode()
     await store.fetchNextImage(datasetId.value)
     await loadProgress()
+    // 进入下一张图片后重置为拖动模式
+    canvasMode.value = 'pan'
   } catch (error) {
     ElMessage.error('保存失败')
   }
@@ -114,6 +123,11 @@ async function handleSaveAndNext() {
 function handleKeydown(e) {
   // 忽略输入框中的按键
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    return
+  }
+
+  // 正在编辑类别快捷键时，交给对应的处理器
+  if (editingCategoryShortcut.value) {
     return
   }
 
@@ -165,7 +179,11 @@ function handleKeydown(e) {
   }
 
   // 数字或字母快捷键选择类别
-  store.selectCategoryByKey(key)
+  const selected = store.selectCategoryByKey(key)
+  if (selected) {
+    // 选择类别后切换到标注模式
+    canvasMode.value = 'annotate'
+  }
 }
 
 // 快捷键设置相关
@@ -198,7 +216,57 @@ function resetShortcuts() {
 }
 
 function selectCategory(category) {
+  // 如果正在编辑快捷键，不选择类别
+  if (editingCategoryShortcut.value) return
   store.selectedCategory = category
+  // 选择类别后切换到标注模式
+  canvasMode.value = 'annotate'
+}
+
+function startEditCategoryShortcut(category, e) {
+  e.stopPropagation()
+  editingCategoryShortcut.value = category.id
+}
+
+function handleCategoryShortcutKeydown(category, e) {
+  e.preventDefault()
+  e.stopPropagation()
+
+  if (e.key === 'Escape') {
+    editingCategoryShortcut.value = null
+    return
+  }
+
+  // 只接受单个字符或数字
+  if (e.key.length === 1) {
+    const newKey = e.key.toLowerCase()
+    // 检查是否与其他类别快捷键冲突
+    const conflict = store.categories.find(c =>
+      c.id !== category.id && c.shortcut_key === newKey
+    )
+    if (conflict) {
+      ElMessage.warning(`快捷键 "${newKey}" 已被 "${conflict.name}" 使用`)
+      return
+    }
+
+    // 更新快捷键
+    updateCategoryShortcut(category.id, newKey)
+  }
+}
+
+async function updateCategoryShortcut(categoryId, shortcutKey) {
+  try {
+    await api.put(`/categories/${categoryId}`, { shortcut_key: shortcutKey })
+    // 更新本地数据
+    const cat = store.categories.find(c => c.id === categoryId)
+    if (cat) {
+      cat.shortcut_key = shortcutKey
+    }
+    ElMessage.success('快捷键已更新')
+  } catch (error) {
+    ElMessage.error('更新快捷键失败')
+  }
+  editingCategoryShortcut.value = null
 }
 
 function goBack() {
@@ -300,8 +368,19 @@ function handleZoomChange(zoom) {
           >
             <span class="color-dot" :style="{ background: category.color }"></span>
             <span class="name">{{ category.name }}</span>
-            <span class="shortcut" v-if="category.shortcut_key">
-              {{ category.shortcut_key }}
+            <span
+              class="shortcut"
+              :class="{ editing: editingCategoryShortcut === category.id }"
+              @click="startEditCategoryShortcut(category, $event)"
+              @keydown="handleCategoryShortcutKeydown(category, $event)"
+              tabindex="0"
+            >
+              <template v-if="editingCategoryShortcut === category.id">
+                ...
+              </template>
+              <template v-else>
+                {{ category.shortcut_key || '+' }}
+              </template>
             </span>
           </div>
         </div>
@@ -443,8 +522,8 @@ function handleZoomChange(zoom) {
             <td>切换到拖动模式</td>
           </tr>
           <tr>
-            <td><kbd>1-9</kbd> 或 <kbd>自定义键</kbd></td>
-            <td>快速切换类别</td>
+            <td><kbd>类别快捷键</kbd></td>
+            <td>快速切换类别并进入标注模式</td>
           </tr>
           <tr>
             <td><kbd>{{ shortcutsStore.getShortcutText('help') }}</kbd></td>
@@ -616,6 +695,25 @@ function handleZoomChange(zoom) {
   border-radius: 4px;
   font-size: 12px;
   color: #ccc;
+  cursor: pointer;
+  min-width: 20px;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.category-item .shortcut:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.category-item .shortcut.editing {
+  background: #e94560;
+  color: white;
+  outline: none;
+}
+
+.category-item .shortcut:focus {
+  outline: 2px solid #e94560;
+  outline-offset: 2px;
 }
 
 .annotations-list {

@@ -35,6 +35,9 @@ const currentBox = ref(null)
 const selectedAnnotation = ref(null)
 const dragHandle = ref(null)
 
+// 拖动调整时的临时边界框（用于实时预览）
+const dragBox = ref(null)
+
 // 图片URL
 const imageUrl = computed(() => `/api/images/${props.imageId}/file`)
 
@@ -133,8 +136,14 @@ function draw() {
   }
 
   // 绘制已有标注
-  props.annotations.forEach(ann => {
-    drawAnnotation(ann, ann.id === selectedAnnotation.value?.id)
+  props.annotations.forEach((ann, index) => {
+    const isSelected = ann.id === selectedAnnotation.value?.id
+    // 如果正在拖动调整这个标注，使用 dragBox 绘制
+    if (isSelected && isDragging.value && dragBox.value) {
+      drawAnnotationWithBox(ann, dragBox.value, index, true)
+    } else {
+      drawAnnotation(ann, index, isSelected)
+    }
   })
 
   // 绘制当前正在绘制的框
@@ -143,7 +152,7 @@ function draw() {
   }
 }
 
-function drawAnnotation(ann, isSelected) {
+function drawAnnotation(ann, index, isSelected) {
   const category = props.categories.find(c => c.id === ann.category_id)
   const color = category?.color || '#FF0000'
 
@@ -159,15 +168,34 @@ function drawAnnotation(ann, isSelected) {
   const box = { x, y, w, h }
   drawBox(box, color, isSelected)
 
-  // 绘制类别标签
+  // 绘制类别标签和编号
   const screenX = x * scale.value + offsetX.value
   const screenY = y * scale.value + offsetY.value
 
+  const labelText = `#${index + 1} ${category?.name || ''}`
   ctx.value.font = '12px Arial'
   ctx.value.fillStyle = color
-  ctx.value.fillRect(screenX, screenY - 18, ctx.value.measureText(category?.name || '').width + 8, 18)
+  ctx.value.fillRect(screenX, screenY - 18, ctx.value.measureText(labelText).width + 8, 18)
   ctx.value.fillStyle = 'white'
-  ctx.value.fillText(category?.name || '', screenX + 4, screenY - 5)
+  ctx.value.fillText(labelText, screenX + 4, screenY - 5)
+}
+
+function drawAnnotationWithBox(ann, box, index, isSelected) {
+  const category = props.categories.find(c => c.id === ann.category_id)
+  const color = category?.color || '#FF0000'
+
+  drawBox(box, color, isSelected)
+
+  // 绘制类别标签和编号
+  const screenX = box.x * scale.value + offsetX.value
+  const screenY = box.y * scale.value + offsetY.value
+
+  const labelText = `#${index + 1} ${category?.name || ''}`
+  ctx.value.font = '12px Arial'
+  ctx.value.fillStyle = color
+  ctx.value.fillRect(screenX, screenY - 18, ctx.value.measureText(labelText).width + 8, 18)
+  ctx.value.fillStyle = 'white'
+  ctx.value.fillText(labelText, screenX + 4, screenY - 5)
 }
 
 function drawBox(box, color, isSelected) {
@@ -215,6 +243,9 @@ function screenToImage(screenX, screenY) {
 }
 
 function handleMouseDown(e) {
+  // 阻止默认行为（Safari 拖动兼容性）
+  e.preventDefault()
+
   const rect = canvasRef.value.getBoundingClientRect()
   const screenX = e.clientX - rect.left
   const screenY = e.clientY - rect.top
@@ -223,6 +254,7 @@ function handleMouseDown(e) {
   if (props.mode === 'pan' || spacePressed.value) {
     isPanning.value = true
     startPoint.value = { x: e.clientX, y: e.clientY }
+    canvasRef.value.style.cursor = 'grabbing'
     return
   }
 
@@ -233,6 +265,16 @@ function handleMouseDown(e) {
       dragHandle.value = handle
       isDragging.value = true
       startPoint.value = screenToImage(screenX, screenY)
+      // 初始化 dragBox 为当前标注的像素坐标
+      const ann = selectedAnnotation.value
+      const imgW = image.value.width
+      const imgH = image.value.height
+      dragBox.value = {
+        x: (ann.x_center - ann.width / 2) * imgW,
+        y: (ann.y_center - ann.height / 2) * imgH,
+        w: ann.width * imgW,
+        h: ann.height * imgH
+      }
       return
     }
   }
@@ -241,11 +283,6 @@ function handleMouseDown(e) {
   const clickedAnn = getAnnotationAt(screenX, screenY)
   if (clickedAnn) {
     selectedAnnotation.value = clickedAnn
-    if (e.detail === 2) {
-      // 双击删除
-      emit('delete', clickedAnn.id)
-      selectedAnnotation.value = null
-    }
     draw()
     return
   }
@@ -275,9 +312,9 @@ function handleMouseMove(e) {
   }
 
   // 调整大小
-  if (isDragging.value && selectedAnnotation.value && dragHandle.value) {
+  if (isDragging.value && selectedAnnotation.value && dragHandle.value && dragBox.value) {
     const imgPoint = screenToImage(screenX, screenY)
-    updateAnnotationSize(selectedAnnotation.value, dragHandle.value.type, imgPoint)
+    updateDragBox(dragHandle.value.type, imgPoint)
     draw()
     return
   }
@@ -304,14 +341,18 @@ function handleMouseUp(e) {
     isDragging.value = false
     dragHandle.value = null
     // 保存更新
-    if (selectedAnnotation.value) {
+    if (selectedAnnotation.value && dragBox.value && image.value) {
+      const imgW = image.value.width
+      const imgH = image.value.height
+      const box = dragBox.value
       emit('update', selectedAnnotation.value.id, {
-        x_center: selectedAnnotation.value.x_center,
-        y_center: selectedAnnotation.value.y_center,
-        width: selectedAnnotation.value.width,
-        height: selectedAnnotation.value.height
+        x_center: (box.x + box.w / 2) / imgW,
+        y_center: (box.y + box.h / 2) / imgH,
+        width: box.w / imgW,
+        height: box.h / imgH
       })
     }
+    dragBox.value = null
     return
   }
 
@@ -436,16 +477,13 @@ function getClickedHandle(screenX, screenY) {
   return null
 }
 
-function updateAnnotationSize(ann, handleType, imgPoint) {
-  if (!image.value) return
+function updateDragBox(handleType, imgPoint) {
+  if (!dragBox.value) return
 
-  const imgW = image.value.width
-  const imgH = image.value.height
-
-  let x1 = (ann.x_center - ann.width / 2) * imgW
-  let y1 = (ann.y_center - ann.height / 2) * imgH
-  let x2 = (ann.x_center + ann.width / 2) * imgW
-  let y2 = (ann.y_center + ann.height / 2) * imgH
+  let x1 = dragBox.value.x
+  let y1 = dragBox.value.y
+  let x2 = dragBox.value.x + dragBox.value.w
+  let y2 = dragBox.value.y + dragBox.value.h
 
   switch (handleType) {
     case 'tl': x1 = imgPoint.x; y1 = imgPoint.y; break
@@ -462,10 +500,12 @@ function updateAnnotationSize(ann, handleType, imgPoint) {
   if (x2 - x1 < 10) x2 = x1 + 10
   if (y2 - y1 < 10) y2 = y1 + 10
 
-  ann.x_center = (x1 + x2) / 2 / imgW
-  ann.y_center = (y1 + y2) / 2 / imgH
-  ann.width = (x2 - x1) / imgW
-  ann.height = (y2 - y1) / imgH
+  dragBox.value = {
+    x: x1,
+    y: y1,
+    w: x2 - x1,
+    h: y2 - y1
+  }
 }
 
 function updateCursor(screenX, screenY) {

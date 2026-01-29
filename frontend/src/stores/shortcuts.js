@@ -50,14 +50,17 @@ export const useShortcutsStore = defineStore('shortcuts', () => {
     )
   }
 
+  // 检测是否为 macOS
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+
   // 获取快捷键显示文本
   function getShortcutText(action) {
     const shortcut = shortcuts.value[action]
     if (!shortcut) return ''
 
     const parts = []
-    if (shortcut.ctrl) parts.push('Ctrl')
-    if (shortcut.shift) parts.push('Shift')
+    if (shortcut.ctrl) parts.push(isMac ? '⌘' : 'Ctrl')
+    if (shortcut.shift) parts.push(isMac ? '⇧' : 'Shift')
     parts.push(shortcut.key.toUpperCase())
 
     return parts.join('+')
