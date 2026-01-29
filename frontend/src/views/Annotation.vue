@@ -57,8 +57,8 @@ async function loadProgress() {
 
 async function handleSave() {
   try {
-    await store.saveAnnotations(false)
-    ElMessage.success('保存成功')
+    const savedCount = await store.saveAnnotations(false)
+    ElMessage.success(`保存成功 (${savedCount} 个标注)`)
     // 如果在历史模式，不自动跳转下一张
     if (!store.isInHistory) {
       await store.fetchNextImage(datasetId.value)
@@ -67,7 +67,8 @@ async function handleSave() {
     }
     await loadProgress()
   } catch (error) {
-    ElMessage.error('保存失败')
+    console.error('Save failed:', error)
+    ElMessage.error('保存失败: ' + (error.response?.data?.detail || error.message))
   }
 }
 
@@ -86,19 +87,28 @@ async function handleSkip() {
 
 async function handlePrevious() {
   try {
+    // 如果已经在历史模式中，先保存当前标注再返回
+    if (store.isInHistory) {
+      const savedCount = await store.saveAnnotations(false)
+      ElMessage.success(`保存成功 (${savedCount} 个标注)`)
+    }
     await store.goToPreviousImage()
   } catch (error) {
-    ElMessage.error('获取上一张失败')
+    console.error('Save or navigate failed:', error)
+    ElMessage.error('操作失败: ' + (error.response?.data?.detail || error.message))
   }
 }
 
 async function handleNext() {
   if (store.isInHistory) {
-    // 在历史模式中，前往下一张历史
+    // 在历史模式中，先保存当前标注，再前往下一张
     try {
+      const savedCount = await store.saveAnnotations(false)
+      ElMessage.success(`保存成功 (${savedCount} 个标注)`)
       await store.goToNextImage()
     } catch (error) {
-      ElMessage.error('获取下一张失败')
+      console.error('Save or navigate failed:', error)
+      ElMessage.error('操作失败: ' + (error.response?.data?.detail || error.message))
     }
   } else {
     // 正常流程，继续获取新图片

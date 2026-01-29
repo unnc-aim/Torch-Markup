@@ -31,12 +31,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const canRedo = computed(() => historyIndex.value < history.value.length - 1)
   const queueLength = computed(() => imageQueue.value.length)
   // 可以返回上一张的条件：有已处理的历史记录
-  // 如果不在历史模式，只要有历史就可以返回
-  // 如果在历史模式，位置不能是第一张
   const canGoPrevious = computed(() => {
-    if (processedHistory.value.length === 0) return false
-    if (!isInHistory.value) return true  // 不在历史模式，有历史就可以返回
-    return historyPosition.value > 0     // 在历史模式，不能是第一张
+    // 只要有历史记录就可以尝试返回
+    return processedHistory.value.length > 0
   })
   const canGoNext = computed(() => isInHistory.value && historyPosition.value < processedHistory.value.length - 1)
 
@@ -378,15 +375,27 @@ export const useAnnotationStore = defineStore('annotation', () => {
       height: a.height
     }))
 
-    await api.post(`/images/${currentImage.value.id}/save`, {
+    console.log('Saving annotations:', {
+      imageId: currentImage.value.id,
+      annotationsCount: annotationsData.length,
+      isInHistory: isInHistory.value,
+      skip
+    })
+
+    const response = await api.post(`/images/${currentImage.value.id}/save`, {
       annotations: annotationsData,
       skip
     })
+
+    console.log('Save response:', response.data)
 
     // 记录到已处理历史（如果不在历史模式中）
     if (!isInHistory.value) {
       recordToProcessedHistory(currentImage.value, annotationsData)
     }
+
+    // 返回保存的标注数量，便于调用者确认
+    return annotationsData.length
   }
 
   // 根据快捷键选择类别
