@@ -225,10 +225,19 @@ run_foreground() {
     done
 }
 
+# 后台运行模式 - 启动后立即返回
+run_background() {
+    show_status
+    echo -e "\n${GREEN}服务已在后台启动${NC}"
+    echo -e "使用 ${YELLOW}$0 stop${NC} 停止服务"
+    echo -e "使用 ${YELLOW}$0 logs${NC} 查看日志"
+}
+
 # 主函数
 main() {
-    case "${1:-start}" in
-        start)
+    case "${1:-}" in
+        ""|fg|foreground)
+            # 默认或 fg：前台运行
             check_python
             check_node
             check_npm
@@ -237,6 +246,17 @@ main() {
             start_backend
             start_frontend
             run_foreground
+            ;;
+        start|bg|background)
+            # start/bg：后台运行
+            check_python
+            check_node
+            check_npm
+            setup_backend
+            setup_frontend
+            start_backend
+            start_frontend
+            run_background
             ;;
         stop)
             stop_services
@@ -274,16 +294,21 @@ main() {
             tail -20 "$ROOT_DIR/frontend.log" 2>/dev/null || echo "无日志"
             ;;
         *)
-            echo "用法: $0 {start|stop|restart|status|logs}"
+            echo "用法: $0 [命令]"
             echo ""
             echo "命令:"
-            echo "  start   - 启动所有服务（默认，前台运行）"
+            echo "  (无参数) - 启动所有服务（前台运行，Ctrl+C 停止）"
+            echo "  start   - 启动所有服务（后台运行）"
             echo "  stop    - 停止所有服务并清除 JWT token"
-            echo "  restart - 重启所有服务"
+            echo "  restart - 重启所有服务（前台运行）"
             echo "  status  - 查看服务状态"
             echo "  logs    - 查看日志"
             echo ""
-            echo "提示: 使用 Ctrl+C 可以停止服务并自动清除所有 JWT token"
+            echo "别名:"
+            echo "  fg      - 同 (无参数)，前台运行"
+            echo "  bg      - 同 start，后台运行"
+            echo ""
+            echo "提示: 前台运行时使用 Ctrl+C 可以停止服务并自动清除所有 JWT token"
             exit 1
             ;;
     esac
