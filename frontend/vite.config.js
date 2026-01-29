@@ -11,6 +11,6 @@ export default defineConfig({
         changeOrigin: true
       }
     },
-    allowedHosts: ['.localhost', '*']
+    allowedHosts: ['.localhost', '*.hnrobert.space', '*.uonaim.tech']
   }
 })
