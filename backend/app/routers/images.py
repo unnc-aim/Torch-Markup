@@ -392,10 +392,12 @@ async def get_dataset_progress(
         cursor.execute("SELECT COUNT(*) as count FROM images WHERE dataset_id = %s AND status = 'pending'", (dataset_id,))
         pending = cursor.fetchone()['count']
 
+    # 进度计算：已标注 + 未见 = 已处理
+    processed = labeled + skipped
     return {
         "total": total,
         "labeled": labeled,
         "skipped": skipped,
         "pending": pending,
-        "progress": round(labeled / total * 100, 2) if total > 0 else 0
+        "progress": round(processed / total * 100, 2) if total > 0 else 0
     }

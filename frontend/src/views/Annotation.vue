@@ -66,7 +66,7 @@ async function handleSave() {
 async function handleSkip() {
   try {
     await store.saveAnnotations(true)
-    ElMessage.info('已跳过')
+    ElMessage.info('已标记为未见')
     await store.fetchNextImage(datasetId.value)
     await loadProgress()
   } catch (error) {
@@ -234,7 +234,7 @@ function handleZoomChange(zoom) {
       <div class="right">
         <el-button @click="showShortcutSettings = true" :icon="'Setting'">快捷键</el-button>
         <el-button @click="showHelp = true" :icon="'QuestionFilled'">帮助</el-button>
-        <el-button @click="handleSkip" type="warning">跳过 ({{ shortcutsStore.getShortcutText('skip') }})</el-button>
+        <el-button @click="handleSkip" type="warning">未见 ({{ shortcutsStore.getShortcutText('skip') }})</el-button>
         <el-button @click="handleSave" type="primary">保存 ({{ shortcutsStore.getShortcutText('save') }})</el-button>
       </div>
     </header>
@@ -328,7 +328,7 @@ function handleZoomChange(zoom) {
               <span class="success">{{ progress.labeled }}</span>
             </div>
             <div class="stat-row">
-              <span>已跳过:</span>
+              <span>未见:</span>
               <span class="warning">{{ progress.skipped }}</span>
             </div>
             <div class="stat-row">
@@ -366,7 +366,7 @@ function handleZoomChange(zoom) {
           </tr>
           <tr>
             <td><kbd>{{ shortcutsStore.getShortcutText('skip') }}</kbd></td>
-            <td>跳过当前图片（无目标）</td>
+            <td>标记未见（画面中无目标）</td>
           </tr>
           <tr>
             <td><kbd>{{ shortcutsStore.getShortcutText('undo') }}</kbd></td>
