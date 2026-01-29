@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+const STORAGE_KEY = 'torch-markup-token'
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -12,7 +14,7 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem(STORAGE_KEY)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -30,7 +32,7 @@ api.interceptors.response.use(
     const message = error.response?.data?.detail || error.message || '请求失败'
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
+      localStorage.removeItem(STORAGE_KEY)
       window.location.href = '/login'
     } else {
       ElMessage.error(message)
