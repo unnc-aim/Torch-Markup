@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 import os
-from app.core import get_db_dependency, get_current_admin, get_current_user, settings
+import json
+from app.core import get_db_dependency, get_current_admin, get_current_user, settings, get_db
 
 router = APIRouter(prefix="/api/datasets", tags=["数据集"])
 
@@ -235,4 +237,147 @@ async def scan_dataset(
         found_images=found,
         imported_images=imported,
         skipped_images=skipped
+    )
+
+
+class BatchImportRequest(BaseModel):
+    root_path: str
+    label_base_path: Optional[str] = None
+
+
+class BatchImportProgress(BaseModel):
+    status: str  # scanning, importing, done, error
+    current_folder: Optional[str] = None
+    total_folders: int = 0
+    processed_folders: int = 0
+    current_dataset: Optional[str] = None
+    datasets_created: int = 0
+    total_images_imported: int = 0
+    message: Optional[str] = None
+
+
+@router.post("/batch-import")
+async def batch_import_datasets(
+    request: BatchImportRequest,
+    current_admin = Depends(get_current_admin)
+):
+    """批量导入数据集 - 扫描目录下所有包含图片的子文件夹"""
+    from PIL import Image as PILImage
+
+    root_path = request.root_path
+    label_base_path = request.label_base_path
+
+    if not os.path.isdir(root_path):
+        raise HTTPException(status_code=400, detail="根目录不存在")
+
+    async def generate_progress():
+        conn = get_db()
+        try:
+            # 第一阶段：扫描所有子文件夹
+            yield f"data: {json.dumps({'status': 'scanning', 'message': '正在扫描目录...'})}\n\n"
+
+            folders_with_images = []
+
+            for folder_name in os.listdir(root_path):
+                folder_path = os.path.join(root_path, folder_name)
+                if not os.path.isdir(folder_path):
+                    continue
+
+                # 检查是否包含图片
+                has_images = False
+                for filename in os.listdir(folder_path):
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext in settings.ALLOWED_IMAGE_EXTENSIONS:
+                        has_images = True
+                        break
+
+                if has_images:
+                    folders_with_images.append((folder_name, folder_path))
+
+            total_folders = len(folders_with_images)
+
+            if total_folders == 0:
+                yield f"data: {json.dumps({'status': 'done', 'message': '未找到包含图片的子文件夹', 'datasets_created': 0, 'total_images_imported': 0})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'status': 'importing', 'message': f'找到 {total_folders} 个包含图片的文件夹', 'total_folders': total_folders, 'processed_folders': 0})}\n\n"
+
+            # 第二阶段：逐个创建数据集并导入图片
+            datasets_created = 0
+            total_images_imported = 0
+
+            with conn.cursor() as cursor:
+                for idx, (folder_name, folder_path) in enumerate(folders_with_images):
+                    # 检查数据集是否已存在
+                    cursor.execute("SELECT id FROM datasets WHERE name = %s", (folder_name,))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        yield f"data: {json.dumps({'status': 'importing', 'current_folder': folder_name, 'total_folders': total_folders, 'processed_folders': idx + 1, 'message': f'跳过已存在的数据集: {folder_name}'})}\n\n"
+                        continue
+
+                    # 设置标签路径
+                    label_path = None
+                    if label_base_path:
+                        label_path = os.path.join(label_base_path, folder_name)
+                        os.makedirs(label_path, exist_ok=True)
+
+                    # 创建数据集
+                    cursor.execute(
+                        "INSERT INTO datasets (name, description, image_path, label_path) VALUES (%s, %s, %s, %s)",
+                        (folder_name, f"从 {root_path} 批量导入", folder_path, label_path)
+                    )
+                    dataset_id = cursor.lastrowid
+                    datasets_created += 1
+
+                    yield f"data: {json.dumps({'status': 'importing', 'current_folder': folder_name, 'current_dataset': folder_name, 'total_folders': total_folders, 'processed_folders': idx, 'datasets_created': datasets_created, 'message': f'正在导入: {folder_name}'})}\n\n"
+
+                    # 扫描并导入图片
+                    images_imported = 0
+                    for filename in os.listdir(folder_path):
+                        ext = os.path.splitext(filename)[1].lower()
+                        if ext not in settings.ALLOWED_IMAGE_EXTENSIONS:
+                            continue
+
+                        file_path = os.path.join(folder_path, filename)
+
+                        # 获取图片尺寸
+                        try:
+                            with PILImage.open(file_path) as img:
+                                width, height = img.size
+                        except Exception:
+                            width, height = None, None
+
+                        cursor.execute(
+                            "INSERT INTO images (dataset_id, filename, file_path, width, height, status) VALUES (%s, %s, %s, %s, %s, %s)",
+                            (dataset_id, filename, file_path, width, height, 'pending')
+                        )
+                        images_imported += 1
+
+                    # 更新数据集统计
+                    cursor.execute(
+                        "UPDATE datasets SET total_images = %s, labeled_images = 0 WHERE id = %s",
+                        (images_imported, dataset_id)
+                    )
+
+                    total_images_imported += images_imported
+                    conn.commit()
+
+                    yield f"data: {json.dumps({'status': 'importing', 'current_folder': folder_name, 'total_folders': total_folders, 'processed_folders': idx + 1, 'datasets_created': datasets_created, 'total_images_imported': total_images_imported, 'message': f'{folder_name}: 导入 {images_imported} 张图片'})}\n\n"
+
+            yield f"data: {json.dumps({'status': 'done', 'total_folders': total_folders, 'processed_folders': total_folders, 'datasets_created': datasets_created, 'total_images_imported': total_images_imported, 'message': f'导入完成！创建 {datasets_created} 个数据集，共 {total_images_imported} 张图片'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+        finally:
+            conn.close()
+
+    return StreamingResponse(
+        generate_progress(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
     )
