@@ -25,8 +25,7 @@ const form = ref({
 // 批量导入相关
 const batchImportVisible = ref(false)
 const batchImportForm = ref({
-  root_path: '',
-  label_base_path: ''
+  root_path: ''
 })
 const batchImportProgress = ref({
   status: '',
@@ -128,8 +127,7 @@ function goToCategories(datasetId) {
 
 function showBatchImportDialog() {
   batchImportForm.value = {
-    root_path: '',
-    label_base_path: ''
+    root_path: ''
   }
   batchImportProgress.value = {
     status: '',
@@ -304,11 +302,7 @@ function closeBatchImportDialog() {
       <el-form :model="batchImportForm" label-width="100px" :disabled="isImporting">
         <el-form-item label="根目录" required>
           <el-input v-model="batchImportForm.root_path" placeholder="/path/to/datasets" />
-          <div class="form-tip">包含多个数据集子文件夹的根目录路径</div>
-        </el-form-item>
-        <el-form-item label="标签根目录">
-          <el-input v-model="batchImportForm.label_base_path" placeholder="/path/to/labels" />
-          <div class="form-tip">标签文件保存的根目录，每个数据集会创建同名子目录（可选）</div>
+          <div class="form-tip">递归扫描所有 image/images 文件夹，labels 自动创建在同级目录</div>
         </el-form-item>
       </el-form>
 
