@@ -10,9 +10,12 @@ const router = useRouter()
 const datasetId = computed(() => parseInt(route.params.datasetId))
 const dataset = ref(null)
 const categories = ref([])
+const allDatasets = ref([])
 const loading = ref(true)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
+const importDialogVisible = ref(false)
+const selectedSourceDataset = ref(null)
 
 const colorOptions = [
   '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
@@ -35,12 +38,15 @@ onMounted(async () => {
 async function loadData() {
   loading.value = true
   try {
-    const [datasetRes, categoriesRes] = await Promise.all([
+    const [datasetRes, categoriesRes, datasetsRes] = await Promise.all([
       api.get(`/datasets/${datasetId.value}`),
-      api.get(`/categories/dataset/${datasetId.value}`)
+      api.get(`/categories/dataset/${datasetId.value}`),
+      api.get('/datasets')
     ])
     dataset.value = datasetRes.data
     categories.value = categoriesRes.data
+    // 过滤掉当前数据集
+    allDatasets.value = datasetsRes.data.filter(d => d.id !== datasetId.value)
   } finally {
     loading.value = false
   }
@@ -103,6 +109,47 @@ async function handleDelete(category) {
     }
   }
 }
+
+function showImportDialog() {
+  selectedSourceDataset.value = null
+  importDialogVisible.value = true
+}
+
+async function handleImportFromDataset() {
+  if (!selectedSourceDataset.value) {
+    ElMessage.warning('请选择源数据集')
+    return
+  }
+
+  try {
+    const response = await api.post(`/categories/import-from-dataset/${datasetId.value}`, {
+      source_dataset_id: selectedSourceDataset.value
+    })
+    ElMessage.success(response.data.message)
+    importDialogVisible.value = false
+    loadData()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '导入失败')
+  }
+}
+
+async function handleImportFromConfig() {
+  try {
+    const response = await api.post(`/dataset-configs/${datasetId.value}/import-default-categories`)
+    ElMessage.success(response.data.message)
+    loadData()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '导入失败')
+  }
+}
+
+function handleImportCommand(command) {
+  if (command === 'dataset') {
+    showImportDialog()
+  } else if (command === 'config') {
+    handleImportFromConfig()
+  }
+}
 </script>
 
 <template>
@@ -112,9 +159,22 @@ async function handleDelete(category) {
         <el-button @click="router.push('/admin/datasets')" :icon="'ArrowLeft'">返回</el-button>
         <h2 v-if="dataset">{{ dataset.name }} - 类别管理</h2>
       </div>
-      <el-button type="primary" @click="showCreateDialog" :icon="'Plus'">
-        添加类别
-      </el-button>
+      <div class="header-buttons">
+        <el-dropdown @command="handleImportCommand" trigger="click">
+          <el-button>
+            导入类别 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="dataset">从其他数据集导入</el-dropdown-item>
+              <el-dropdown-item command="config">从格式配置导入</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button type="primary" @click="showCreateDialog" :icon="'Plus'">
+          添加类别
+        </el-button>
+      </div>
     </div>
 
     <div class="categories-grid">
@@ -181,6 +241,29 @@ async function handleDelete(category) {
         <el-button type="primary" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 从数据集导入对话框 -->
+    <el-dialog v-model="importDialogVisible" title="从其他数据集导入类别" width="400px">
+      <el-form label-width="100px">
+        <el-form-item label="源数据集">
+          <el-select v-model="selectedSourceDataset" placeholder="选择数据集" style="width: 100%">
+            <el-option
+              v-for="ds in allDatasets"
+              :key="ds.id"
+              :value="ds.id"
+              :label="ds.name"
+            />
+          </el-select>
+        </el-form-item>
+        <div class="form-tip" style="margin-left: 100px">
+          已存在的类别名称将被跳过
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleImportFromDataset">导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -206,6 +289,11 @@ async function handleDelete(category) {
 
 .header-left h2 {
   margin: 0;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
 }
 
 .categories-grid {

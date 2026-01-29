@@ -204,3 +204,80 @@ async def batch_create_categories(
         created = cursor.fetchall()
 
     return created
+
+
+class ImportFromDatasetRequest(BaseModel):
+    source_dataset_id: int
+
+
+@router.post("/import-from-dataset/{dataset_id}")
+async def import_from_dataset(
+    dataset_id: int,
+    data: ImportFromDatasetRequest,
+    conn = Depends(get_db_dependency),
+    current_admin = Depends(get_current_admin)
+):
+    """从其他数据集导入类别"""
+    with conn.cursor() as cursor:
+        # 检查目标数据集是否存在
+        cursor.execute("SELECT id FROM datasets WHERE id = %s", (dataset_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="目标数据集不存在")
+
+        # 检查源数据集是否存在
+        cursor.execute("SELECT id FROM datasets WHERE id = %s", (data.source_dataset_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="源数据集不存在")
+
+        # 获取源数据集的类别
+        cursor.execute(
+            "SELECT name, shortcut_key, color, sort_order FROM categories WHERE dataset_id = %s ORDER BY sort_order",
+            (data.source_dataset_id,)
+        )
+        source_categories = cursor.fetchall()
+
+        if not source_categories:
+            raise HTTPException(status_code=400, detail="源数据集没有类别")
+
+        # 获取目标数据集已有的类别名
+        cursor.execute(
+            "SELECT name FROM categories WHERE dataset_id = %s",
+            (dataset_id,)
+        )
+        existing_names = {row['name'] for row in cursor.fetchall()}
+
+        # 获取目标数据集已用的快捷键
+        cursor.execute(
+            "SELECT shortcut_key FROM categories WHERE dataset_id = %s AND shortcut_key IS NOT NULL",
+            (dataset_id,)
+        )
+        existing_keys = {row['shortcut_key'] for row in cursor.fetchall()}
+
+        imported = 0
+        skipped = 0
+        for cat in source_categories:
+            if cat['name'] in existing_names:
+                skipped += 1
+                continue
+
+            # 检查快捷键是否已被使用
+            shortcut_key = cat['shortcut_key']
+            if shortcut_key and shortcut_key in existing_keys:
+                shortcut_key = None  # 清除冲突的快捷键
+
+            cursor.execute(
+                """INSERT INTO categories (dataset_id, name, shortcut_key, color, sort_order)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (dataset_id, cat['name'], shortcut_key, cat['color'], cat['sort_order'])
+            )
+            imported += 1
+
+            if shortcut_key:
+                existing_keys.add(shortcut_key)
+            existing_names.add(cat['name'])
+
+    return {
+        "message": f"成功导入 {imported} 个类别，跳过 {skipped} 个已存在的类别",
+        "imported": imported,
+        "skipped": skipped
+    }
