@@ -120,10 +120,9 @@ async def get_image(
 @router.get("/{image_id}/file")
 async def get_image_file(
     image_id: int,
-    conn = Depends(get_db_dependency),
-    current_user = Depends(get_current_user)
+    conn = Depends(get_db_dependency)
 ):
-    """获取图片文件"""
+    """获取图片文件（内网使用，无需认证）"""
     with conn.cursor() as cursor:
         cursor.execute("SELECT file_path FROM images WHERE id = %s", (image_id,))
         image = cursor.fetchone()
