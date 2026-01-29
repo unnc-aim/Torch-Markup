@@ -7,8 +7,9 @@ Torch-Markup 是一个图像数据标注平台，支持 YOLO 格式数据集的�
 ## 技术栈
 
 - **前端**: Vue 3 + Vite + Element Plus + Pinia
-- **后端**: Python 3.10+ + FastAPI + SQLAlchemy + Pydantic
+- **后端**: Python 3.10+ + FastAPI + PyMySQL
 - **数据库**: MySQL 8.0+
+- **认证**: JWT (python-jose + bcrypt)
 
 ## 项目结构
 
@@ -25,30 +26,30 @@ torch-markup/
 ├── backend/            # FastAPI 后端
 │   ├── app/
 │   │   ├── core/       # 配置、数据库、安全
-│   │   ├── models/     # SQLAlchemy 模型
 │   │   ├── routers/    # API 路由
-│   │   └── services/   # 业务逻辑
+│   │   └── main.py     # 应用入口
 │   └── requirements.txt
 ├── database/
 │   └── init.sql        # 数据库初始化
-└── start.sh            # 一键启动脚本
+├── demo/               # 演示数据集
+└── dev.sh              # 开发启动脚本
 ```
 
 ## 开发命令
 
 ```bash
-# 启动所有服务
-./start.sh
-
-# 停止服务
-./start.sh stop
-
-# 查看状态
-./start.sh status
-
-# 查看日志
-./start.sh logs
+./dev.sh          # 启动服务（前台运行，Ctrl+C 停止并清除 token）
+./dev.sh stop     # 停止服务并清除 JWT token
+./dev.sh restart  # 重启服务
+./dev.sh status   # 查看状态
+./dev.sh logs     # 查看日志
 ```
+
+## Git 提交规范
+
+- 每完成一个功能或修复就提交一次
+- 禁止在 commit message 中写 coauthor
+- 提交信息使用中文，简洁明了
 
 ## 后端开发规范
 
@@ -60,17 +61,18 @@ torch-markup/
 - 认证路由: `/api/auth/*`
 - 管理路由: `/api/admin/*` (需要管理员权限)
 
-### 数据模型
+### 数据库访问
 
-- 模型定义位于 `backend/app/models/`
-- 使用 SQLAlchemy ORM
+- 使用 PyMySQL + 原生 SQL（不使用 ORM）
 - 表名使用复数形式 (users, datasets, images)
-- 必须包含 `id` 主键和时间戳字段
+- 字符集使用 utf8mb4
 
 ### 认证
 
 - 使用 JWT Token 认证
 - Token 有效期 24 小时
+- JWT token 的 `sub` 字段必须是字符串
+- 密码哈希使用 bcrypt 直接调用
 - 获取当前用户: `Depends(get_current_user)`
 - 获取管理员: `Depends(get_current_admin)`
 
@@ -87,6 +89,7 @@ torch-markup/
 - 使用 Pinia Composition API 风格
 - 用户状态: `useUserStore`
 - 标注状态: `useAnnotationStore`
+- localStorage key 必须带项目前缀 `torch-markup-`
 
 ### API 调用
 
