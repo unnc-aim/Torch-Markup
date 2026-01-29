@@ -11,6 +11,6 @@ export default defineConfig({
         changeOrigin: true
       }
     },
-    allowedHosts: ['.localhost', 'hnrobert.space:23433', 'hnrobert.space']
+    allowedHosts: true
   }
 })

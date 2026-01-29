@@ -170,17 +170,6 @@ function goBack() {
       </div>
     </div>
 
-    <!-- 后台预加载进度条 -->
-    <div v-if="!store.isInitialLoad && store.isPrefetching" class="prefetch-bar">
-      <span>缓存加载中...</span>
-      <el-progress
-        :percentage="store.prefetchProgress"
-        :stroke-width="6"
-        style="width: 200px"
-      />
-      <span class="queue-info">队列: {{ store.queueLength }}</span>
-    </div>
-
     <!-- 顶部工具栏 -->
     <header class="toolbar" v-show="!store.isInitialLoad || !store.isPrefetching">
       <div class="left">
@@ -312,6 +301,17 @@ function goBack() {
         </div>
       </aside>
     </main>
+
+    <!-- 后台预加载进度条（底部） -->
+    <div v-if="!store.isInitialLoad && store.isPrefetching" class="prefetch-bar">
+      <span>缓存加载中...</span>
+      <el-progress
+        :percentage="store.prefetchProgress"
+        :stroke-width="6"
+        style="width: 200px"
+      />
+      <span class="queue-info">队列: {{ store.queueLength }}</span>
+    </div>
 
     <!-- 快捷键帮助弹窗 -->
     <el-dialog v-model="showHelp" title="快捷键帮助" width="500px">
@@ -640,10 +640,10 @@ kbd {
   color: #a0a0a0;
 }
 
-/* 后台预加载进度条 */
+/* 后台预加载进度条（底部） */
 .prefetch-bar {
   position: fixed;
-  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 32px;
