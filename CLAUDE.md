@@ -43,13 +43,23 @@ torch-markup/
 ./dev.sh restart  # 重启服务
 ./dev.sh status   # 查看状态
 ./dev.sh logs     # 查看日志
+
+# 前端包管理
+cd frontend && pnpm install   # 安装依赖
+cd frontend && pnpm dev       # 开发模式
+cd frontend && pnpm build     # 构建生产版本
 ```
 
 ## Git 提交规范
 
-- 每完成一个功能或修复就提交一次
+- **每新增一个功能或修复一个问题就立即提交一次**（重要：不要积攒多个改动）
 - 禁止在 commit message 中写 coauthor
 - 提交信息使用中文，简洁明了
+- 提交信息格式：`类型: 简要描述`
+  - `feat:` 新功能
+  - `fix:` 修复问题
+  - `docs:` 文档更新
+  - `refactor:` 重构
 
 ## 后端开发规范
 
