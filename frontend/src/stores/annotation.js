@@ -21,10 +21,17 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const isInitialLoad = ref(true)      // 是否首次加载
   const prefetchedImages = ref(new Map()) // 已预加载的图片 Blob
 
+  // 已处理图片历史（用于返回上一张）
+  const processedHistory = ref([])     // 已处理图片历史栈
+  const historyPosition = ref(-1)      // 当前位置 (-1 表示在最新)
+  const isInHistory = ref(false)       // 是否正在浏览历史
+
   // 计算属性
   const canUndo = computed(() => historyIndex.value > 0)
   const canRedo = computed(() => historyIndex.value < history.value.length - 1)
   const queueLength = computed(() => imageQueue.value.length)
+  const canGoPrevious = computed(() => processedHistory.value.length > 0 && historyPosition.value !== 0)
+  const canGoNext = computed(() => isInHistory.value && historyPosition.value < processedHistory.value.length - 1)
 
   // 加载类别
   async function loadCategories(datasetId) {
@@ -257,6 +264,101 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
   }
 
+  // 记录已处理图片到历史
+  function recordToProcessedHistory(image, imageAnnotations) {
+    // 如果正在浏览历史，先截断后面的部分
+    if (isInHistory.value && historyPosition.value < processedHistory.value.length - 1) {
+      processedHistory.value = processedHistory.value.slice(0, historyPosition.value + 1)
+    }
+
+    processedHistory.value.push({
+      ...image,
+      annotations: JSON.parse(JSON.stringify(imageAnnotations))
+    })
+    historyPosition.value = processedHistory.value.length - 1
+    isInHistory.value = false
+
+    // 限制历史记录数量
+    if (processedHistory.value.length > 50) {
+      processedHistory.value.shift()
+      historyPosition.value--
+    }
+  }
+
+  // 返回上一张
+  async function goToPreviousImage() {
+    if (!canGoPrevious.value) return null
+
+    // 如果刚开始返回，当前图片也需要记录（如果还没记录）
+    if (!isInHistory.value && currentImage.value) {
+      // 当前图片入栈（但不再次推入如果已经在栈顶）
+      const lastInHistory = processedHistory.value[processedHistory.value.length - 1]
+      if (!lastInHistory || lastInHistory.id !== currentImage.value.id) {
+        processedHistory.value.push({
+          ...currentImage.value,
+          annotations: JSON.parse(JSON.stringify(annotations.value))
+        })
+        historyPosition.value = processedHistory.value.length - 1
+      }
+    }
+
+    isInHistory.value = true
+    historyPosition.value--
+
+    const prevImage = processedHistory.value[historyPosition.value]
+    if (prevImage) {
+      isLoading.value = true
+      try {
+        // 从后端获取最新状态
+        const response = await api.get(`/images/${prevImage.id}`)
+        currentImage.value = response.data
+        annotations.value = response.data.annotations || []
+        history.value = []
+        historyIndex.value = -1
+        saveHistory()
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    return currentImage.value
+  }
+
+  // 前往下一张（在历史中导航）
+  async function goToNextImage() {
+    if (!canGoNext.value) return null
+
+    historyPosition.value++
+    const nextImage = processedHistory.value[historyPosition.value]
+
+    if (nextImage) {
+      isLoading.value = true
+      try {
+        const response = await api.get(`/images/${nextImage.id}`)
+        currentImage.value = response.data
+        annotations.value = response.data.annotations || []
+        history.value = []
+        historyIndex.value = -1
+        saveHistory()
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    // 如果到达历史末尾，退出历史模式
+    if (historyPosition.value === processedHistory.value.length - 1) {
+      isInHistory.value = false
+    }
+
+    return currentImage.value
+  }
+
+  // 退出历史模式，继续正常标注流程
+  function exitHistoryMode() {
+    isInHistory.value = false
+    historyPosition.value = processedHistory.value.length - 1
+  }
+
   // 保存标注
   async function saveAnnotations(skip = false) {
     if (!currentImage.value) return
@@ -273,6 +375,11 @@ export const useAnnotationStore = defineStore('annotation', () => {
       annotations: annotationsData,
       skip
     })
+
+    // 记录到已处理历史（如果不在历史模式中）
+    if (!isInHistory.value) {
+      recordToProcessedHistory(currentImage.value, annotationsData)
+    }
   }
 
   // 根据快捷键选择类别
@@ -293,6 +400,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
     historyIndex.value = -1
     imageQueue.value = []
     isInitialLoad.value = true
+    processedHistory.value = []
+    historyPosition.value = -1
+    isInHistory.value = false
     clearPrefetchCache()
   }
 
@@ -310,6 +420,11 @@ export const useAnnotationStore = defineStore('annotation', () => {
     prefetchProgress,
     isPrefetching,
     isInitialLoad,
+    // 已处理历史相关
+    processedHistory,
+    isInHistory,
+    canGoPrevious,
+    canGoNext,
     // 方法
     loadCategories,
     fetchNextImage,
@@ -322,6 +437,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
     saveAnnotations,
     selectCategoryByKey,
     getPrefetchedImageUrl,
+    goToPreviousImage,
+    goToNextImage,
+    exitHistoryMode,
     reset
   }
 })

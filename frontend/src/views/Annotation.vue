@@ -56,7 +56,10 @@ async function handleSave() {
   try {
     await store.saveAnnotations(false)
     ElMessage.success('保存成功')
-    await store.fetchNextImage(datasetId.value)
+    // 如果在历史模式，不自动跳转下一张
+    if (!store.isInHistory) {
+      await store.fetchNextImage(datasetId.value)
+    }
     await loadProgress()
   } catch (error) {
     ElMessage.error('保存失败')
@@ -71,6 +74,40 @@ async function handleSkip() {
     await loadProgress()
   } catch (error) {
     ElMessage.error('操作失败')
+  }
+}
+
+async function handlePrevious() {
+  try {
+    await store.goToPreviousImage()
+  } catch (error) {
+    ElMessage.error('获取上一张失败')
+  }
+}
+
+async function handleNext() {
+  if (store.isInHistory) {
+    // 在历史模式中，前往下一张历史
+    try {
+      await store.goToNextImage()
+    } catch (error) {
+      ElMessage.error('获取下一张失败')
+    }
+  } else {
+    // 正常流程，继续获取新图片
+    await handleSaveAndNext()
+  }
+}
+
+async function handleSaveAndNext() {
+  try {
+    await store.saveAnnotations(false)
+    ElMessage.success('保存成功')
+    store.exitHistoryMode()
+    await store.fetchNextImage(datasetId.value)
+    await loadProgress()
+  } catch (error) {
+    ElMessage.error('保存失败')
   }
 }
 
@@ -232,6 +269,15 @@ function handleZoomChange(zoom) {
         </div>
       </div>
       <div class="right">
+        <el-button-group class="nav-buttons">
+          <el-button @click="handlePrevious" :disabled="!store.canGoPrevious" :icon="'ArrowLeft'">
+            上一张
+          </el-button>
+          <el-button @click="handleNext" :disabled="store.isInHistory && !store.canGoNext" :icon="'ArrowRight'">
+            {{ store.isInHistory ? '下一张' : '继续' }}
+          </el-button>
+        </el-button-group>
+        <span v-if="store.isInHistory" class="history-indicator">浏览历史中</span>
         <el-button @click="showShortcutSettings = true" :icon="'Setting'">快捷键</el-button>
         <el-button @click="showHelp = true" :icon="'QuestionFilled'">帮助</el-button>
         <el-button @click="handleSkip" type="warning">未见 ({{ shortcutsStore.getShortcutText('skip') }})</el-button>
@@ -488,6 +534,18 @@ function handleZoomChange(zoom) {
   font-size: 12px;
   min-width: 50px;
   text-align: center;
+}
+
+.nav-buttons {
+  margin-right: 8px;
+}
+
+.history-indicator {
+  color: #e6a23c;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: rgba(230, 162, 60, 0.2);
+  border-radius: 4px;
 }
 
 .image-info {
