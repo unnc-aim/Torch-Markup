@@ -5,10 +5,14 @@ const props = defineProps({
   imageId: Number,
   annotations: Array,
   categories: Array,
-  selectedCategory: Object
+  selectedCategory: Object,
+  mode: {
+    type: String,
+    default: 'annotate'  // 'annotate' | 'pan'
+  }
 })
 
-const emit = defineEmits(['add', 'update', 'delete'])
+const emit = defineEmits(['add', 'update', 'delete', 'zoom-change'])
 
 const canvasRef = ref(null)
 const containerRef = ref(null)
@@ -56,6 +60,17 @@ watch(() => props.imageId, () => {
 watch(() => props.annotations, () => {
   draw()
 }, { deep: true })
+
+// 模式变化时更新光标
+watch(() => props.mode, () => {
+  if (canvasRef.value) {
+    if (props.mode === 'pan') {
+      canvasRef.value.style.cursor = 'grab'
+    } else {
+      canvasRef.value.style.cursor = 'crosshair'
+    }
+  }
+})
 
 function loadImage() {
   if (!props.imageId) return
@@ -204,8 +219,8 @@ function handleMouseDown(e) {
   const screenX = e.clientX - rect.left
   const screenY = e.clientY - rect.top
 
-  // 空格键按下时进入平移模式
-  if (spacePressed.value) {
+  // 拖动模式或空格键按下时进入平移模式
+  if (props.mode === 'pan' || spacePressed.value) {
     isPanning.value = true
     startPoint.value = { x: e.clientX, y: e.clientY }
     return
@@ -346,6 +361,7 @@ function handleWheel(e) {
   offsetX.value = mouseX - imgPoint.x * newScale
   offsetY.value = mouseY - imgPoint.y * newScale
 
+  emit('zoom-change', scale.value)
   draw()
 }
 
@@ -453,6 +469,12 @@ function updateAnnotationSize(ann, handleType, imgPoint) {
 }
 
 function updateCursor(screenX, screenY) {
+  // 拖动模式
+  if (props.mode === 'pan') {
+    canvasRef.value.style.cursor = isPanning.value ? 'grabbing' : 'grab'
+    return
+  }
+
   if (spacePressed.value) {
     canvasRef.value.style.cursor = isPanning.value ? 'grabbing' : 'grab'
     return
@@ -469,6 +491,12 @@ function updateCursor(screenX, screenY) {
   const ann = getAnnotationAt(screenX, screenY)
   canvasRef.value.style.cursor = ann ? 'move' : 'crosshair'
 }
+
+// 暴露方法供外部调用
+defineExpose({
+  fitToContainer,
+  scale
+})
 </script>
 
 <template>

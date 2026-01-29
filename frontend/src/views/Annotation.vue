@@ -18,6 +18,11 @@ const showHelp = ref(false)
 const showShortcutSettings = ref(false)
 const editingShortcut = ref(null)
 
+// 模式切换
+const canvasMode = ref('annotate')  // 'annotate' | 'pan'
+const zoomLevel = ref(1)
+const canvasRef = ref(null)
+
 onMounted(async () => {
   await loadData()
   window.addEventListener('keydown', handleKeydown)
@@ -112,6 +117,16 @@ function handleKeydown(e) {
     return
   }
 
+  // 模式切换快捷键
+  if (key === 'v') {
+    canvasMode.value = 'annotate'
+    return
+  }
+  if (key === 'h') {
+    canvasMode.value = 'pan'
+    return
+  }
+
   // 数字或字母快捷键选择类别
   store.selectCategoryByKey(key)
 }
@@ -152,6 +167,17 @@ function selectCategory(category) {
 function goBack() {
   router.push('/')
 }
+
+function fitToView() {
+  if (canvasRef.value) {
+    canvasRef.value.fitToContainer()
+    zoomLevel.value = canvasRef.value.scale
+  }
+}
+
+function handleZoomChange(zoom) {
+  zoomLevel.value = zoom
+}
 </script>
 
 <template>
@@ -190,6 +216,20 @@ function goBack() {
             重做
           </el-button>
         </el-button-group>
+
+        <div class="mode-toolbar">
+          <el-radio-group v-model="canvasMode" size="small">
+            <el-radio-button value="annotate">
+              <span class="mode-btn">✏️ 标注 (V)</span>
+            </el-radio-button>
+            <el-radio-button value="pan">
+              <span class="mode-btn">✋ 拖动 (H)</span>
+            </el-radio-button>
+          </el-radio-group>
+
+          <span class="zoom-info">{{ Math.round(zoomLevel * 100) }}%</span>
+          <el-button size="small" @click="fitToView">适应</el-button>
+        </div>
       </div>
       <div class="right">
         <el-button @click="showShortcutSettings = true" :icon="'Setting'">快捷键</el-button>
@@ -256,13 +296,16 @@ function goBack() {
 
         <AnnotationCanvas
           v-else
+          ref="canvasRef"
           :image-id="store.currentImage.id"
           :annotations="store.annotations"
           :categories="store.categories"
           :selected-category="store.selectedCategory"
+          :mode="canvasMode"
           @add="store.addAnnotation"
           @update="store.updateAnnotation"
           @delete="store.removeAnnotation"
+          @zoom-change="handleZoomChange"
         />
       </div>
 
@@ -346,6 +389,14 @@ function goBack() {
             <td>平移画布</td>
           </tr>
           <tr>
+            <td><kbd>V</kbd></td>
+            <td>切换到标注模式</td>
+          </tr>
+          <tr>
+            <td><kbd>H</kbd></td>
+            <td>切换到拖动模式</td>
+          </tr>
+          <tr>
             <td><kbd>1-9</kbd> 或 <kbd>自定义键</kbd></td>
             <td>快速切换类别</td>
           </tr>
@@ -417,6 +468,26 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.mode-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid #0f3460;
+}
+
+.mode-btn {
+  font-size: 12px;
+}
+
+.zoom-info {
+  color: #a0a0a0;
+  font-size: 12px;
+  min-width: 50px;
+  text-align: center;
 }
 
 .image-info {
