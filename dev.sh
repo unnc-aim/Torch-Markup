@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Torch-Markup 一键启动脚本
+# Torch-Markup 开发环境启动脚本
 
 set -e
 
@@ -17,8 +17,37 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}    Torch-Markup 启动脚本${NC}"
+echo -e "${BLUE}    Torch-Markup 开发环境${NC}"
 echo -e "${BLUE}========================================${NC}"
+
+# 生成新的 SECRET_KEY
+generate_secret_key() {
+    if command -v openssl &> /dev/null; then
+        openssl rand -hex 32
+    else
+        # 如果没有 openssl，使用 Python
+        python3 -c "import secrets; print(secrets.token_hex(32))"
+    fi
+}
+
+# 更新 .env 文件中的 SECRET_KEY
+update_secret_key() {
+    local env_file="$BACKEND_DIR/.env"
+    if [ -f "$env_file" ]; then
+        local new_key=$(generate_secret_key)
+        if grep -q "^SECRET_KEY=" "$env_file"; then
+            # macOS 和 Linux 兼容的 sed
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/^SECRET_KEY=.*/SECRET_KEY=$new_key/" "$env_file"
+            else
+                sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$new_key/" "$env_file"
+            fi
+        else
+            echo "SECRET_KEY=$new_key" >> "$env_file"
+        fi
+        echo -e "${GREEN}✓ JWT SECRET_KEY 已更新，所有旧 token 已失效${NC}"
+    fi
+}
 
 # 检查Python
 check_python() {
@@ -99,7 +128,7 @@ start_backend() {
     source venv/bin/activate
 
     # 后台启动uvicorn
-    nohup uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 > "$ROOT_DIR/backend.log" 2>&1 &
+    nohup uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 > "$ROOT_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
     echo $BACKEND_PID > "$ROOT_DIR/.backend.pid"
 
@@ -150,7 +179,21 @@ stop_services() {
     # 清理可能残留的进程
     pkill -f "uvicorn app.main:app" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
+
+    # 清除所有 JWT token (更新 SECRET_KEY)
+    update_secret_key
 }
+
+# 信号处理 - Ctrl+C
+cleanup_on_exit() {
+    echo -e "\n${YELLOW}收到退出信号，正在清理...${NC}"
+    stop_services
+    echo -e "${GREEN}所有服务已停止，JWT token 已清除${NC}"
+    exit 0
+}
+
+# 注册信号处理
+trap cleanup_on_exit SIGINT SIGTERM
 
 # 显示状态
 show_status() {
@@ -168,8 +211,18 @@ show_status() {
     echo -e "  后端: $ROOT_DIR/backend.log"
     echo -e "  前端: $ROOT_DIR/frontend.log"
     echo -e ""
-    echo -e "停止服务: ${YELLOW}$0 stop${NC}"
+    echo -e "停止服务: ${YELLOW}$0 stop${NC} 或 ${YELLOW}Ctrl+C${NC}"
     echo -e "${BLUE}========================================${NC}"
+}
+
+# 前台运行模式 - 等待用户 Ctrl+C
+run_foreground() {
+    show_status
+    echo -e "\n${YELLOW}服务运行中，按 Ctrl+C 停止...${NC}"
+    # 等待信号
+    while true; do
+        sleep 1
+    done
 }
 
 # 主函数
@@ -183,7 +236,7 @@ main() {
             setup_frontend
             start_backend
             start_frontend
-            show_status
+            run_foreground
             ;;
         stop)
             stop_services
@@ -192,7 +245,14 @@ main() {
         restart)
             stop_services
             sleep 2
-            main start
+            check_python
+            check_node
+            check_npm
+            setup_backend
+            setup_frontend
+            start_backend
+            start_frontend
+            run_foreground
             ;;
         status)
             echo -e "${YELLOW}检查服务状态...${NC}"
@@ -217,11 +277,13 @@ main() {
             echo "用法: $0 {start|stop|restart|status|logs}"
             echo ""
             echo "命令:"
-            echo "  start   - 启动所有服务（默认）"
-            echo "  stop    - 停止所有服务"
+            echo "  start   - 启动所有服务（默认，前台运行）"
+            echo "  stop    - 停止所有服务并清除 JWT token"
             echo "  restart - 重启所有服务"
             echo "  status  - 查看服务状态"
             echo "  logs    - 查看日志"
+            echo ""
+            echo "提示: 使用 Ctrl+C 可以停止服务并自动清除所有 JWT token"
             exit 1
             ;;
     esac
