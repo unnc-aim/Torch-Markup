@@ -1,6 +1,6 @@
 -- Migration 001: 创建数据集配置表
 -- 用于支持不同格式的数据集（YOLO、DJI ROCO 等）
-
+USE torch_markup
 CREATE TABLE IF NOT EXISTS dataset_configs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     dataset_id INT NOT NULL UNIQUE,
