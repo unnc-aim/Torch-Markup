@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "vite build && cp -r ./dist/ ../sslly-nginx/static/torch-markup-frontend"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
