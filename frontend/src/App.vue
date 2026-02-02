@@ -11,6 +11,10 @@ const userStore = useUserStore()
       <img alt="浙公网安备图标" loading="lazy" width="16" height="16" src="/beian.png">浙公网安备33021202003929号
     </a>
     <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" class="footer-link">浙ICP备2024118372号-1</a>
+    <br/>
+    <p>
+      By <a class="footer-link" href="https://github.com/Gentle-Lijie">Gentle-Lijie</a> for the <a href="https://github.com/unnc-aim" class="footer-link">University of Nottingham Ningbo China(UNNC) Robomaster AIM Team.</a>
+    </p>
   </div>
 </template>
 
